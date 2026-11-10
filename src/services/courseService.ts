@@ -4,14 +4,11 @@ import {
   getDocs, 
   getDoc, 
   setDoc, 
-  updateDoc, 
-  deleteDoc, 
   query, 
   where, 
-  orderBy, 
   writeBatch 
 } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { db, auth } from '../firebase/config';
 import { handleFirestoreError, OperationType } from '../firebase/errorHandler';
 import { 
   Course, 
@@ -31,10 +28,190 @@ export function calculateStatusGroup(rate: number): StatusGroup {
   return 'critical';
 }
 
+// Check if currently operating in Demo / Local fallback mode
+function isDemoMode(teacherId?: string): boolean {
+  return !auth.currentUser || teacherId === 'demo-teacher-001' || localStorage.getItem('checkpoint_demo_teacher') === 'true';
+}
+
+// ----------------------------------------------------
+// LOCAL STORAGE KEYS & REPO (FOR DEMO MODE)
+// ----------------------------------------------------
+const LOCAL_COURSES_KEY = 'checkpoint_local_courses';
+const LOCAL_STUDENTS_KEY = 'checkpoint_local_students_';
+const LOCAL_SESSIONS_KEY = 'checkpoint_local_sessions_';
+const LOCAL_RECORDS_KEY = 'checkpoint_local_records_';
+
+function initDemoStorageIfEmpty(teacherId: string = 'demo-teacher-001') {
+  const existingCoursesStr = localStorage.getItem(LOCAL_COURSES_KEY);
+  if (existingCoursesStr && JSON.parse(existingCoursesStr).length > 0) {
+    return;
+  }
+
+  // Pre-seed default demo course
+  const courseId = 'demo_course_default';
+  const demoCourse: Course = {
+    id: courseId,
+    code: 'CS204',
+    name: 'การออกแบบขั้นตอนวิธีและการเขียนโปรแกรม (Algorithms & Programming)',
+    section: 'Sec 1 (บรรยาย+ปฏิบัติ)',
+    term: '1/2569',
+    teacherId,
+    teacherEmail: 'teacher.demo@university.ac.th',
+    totalPlannedWeeks: 15,
+    studentCount: 20,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(LOCAL_COURSES_KEY, JSON.stringify([demoCourse]));
+
+  // 20 Thai Students
+  const sampleStudents = [
+    { code: '66010012', name: 'กิตติศักดิ์ วงศ์สุวรรณ', nickname: 'กิต', email: 'kittisak.w@std.ac.th', phone: '081-234-5678' },
+    { code: '66010025', name: 'จิราพร รัตนโชติ', nickname: 'แพร', email: 'jiraporn.r@std.ac.th', phone: '082-345-6789' },
+    { code: '66010034', name: 'ชานนท์ เมธากุล', nickname: 'นนท์', email: 'chanon.m@std.ac.th', phone: '083-456-7890' },
+    { code: '66010048', name: 'ณัฐกานต์ ศรีสวัสดิ์', nickname: 'ณัฐ', email: 'nattakan.s@std.ac.th', phone: '084-567-8901' },
+    { code: '66010059', name: 'ดนัย บุญมี', nickname: 'บอส', email: 'danai.b@std.ac.th', phone: '085-678-9012' },
+    { code: '66010067', name: 'ทักษอร ประเสริฐวิทย์', nickname: 'ออม', email: 'taksaon.p@std.ac.th', phone: '086-789-0123' },
+    { code: '66010078', name: 'ธนวัฒน์ พงษ์ศิริ', nickname: 'ท็อป', email: 'thanawat.p@std.ac.th', phone: '087-890-1234' },
+    { code: '66010086', name: 'ธีรเดช บวรวงศ์', nickname: 'เดช', email: 'theeradech.b@std.ac.th', phone: '088-901-2345' },
+    { code: '66010099', name: 'นภาพร สถิตกุล', nickname: 'ฟ้า', email: 'naphaporn.s@std.ac.th', phone: '089-012-3456' },
+    { code: '66010108', name: 'ปกรณ์เกียรติ วิจิตร', nickname: 'กร', email: 'pakornkiat.v@std.ac.th', phone: '090-123-4567' },
+    { code: '66010115', name: 'ปวีณา มณีกุล', nickname: 'วี', email: 'paweena.m@std.ac.th', phone: '091-234-5678' },
+    { code: '66010126', name: 'พงศกร สันติสุข', nickname: 'ก้อง', email: 'pongsakorn.s@std.ac.th', phone: '092-345-6789' },
+    { code: '66010137', name: 'ภัทรดนัย เตชะวณิช', nickname: 'ภูมิ', email: 'patradanai.t@std.ac.th', phone: '093-456-7890' },
+    { code: '66010149', name: 'มณฑิรา วาสนา', nickname: 'มุก', email: 'monthira.v@std.ac.th', phone: '094-567-8901' },
+    { code: '66010158', name: 'วรเมธ วิเศษชัย', nickname: 'เมธ', email: 'woramet.v@std.ac.th', phone: '095-678-9012' },
+    { code: '66010162', name: 'ศิริรัตน์ กิจเจริญ', nickname: 'เกรซ', email: 'sirirat.k@std.ac.th', phone: '096-789-0123' },
+    { code: '66010173', name: 'สมัชชา ทรัพย์สมบูรณ์', nickname: 'บอย', email: 'samatcha.s@std.ac.th', phone: '097-890-1234' },
+    { code: '66010185', name: 'สิรินธร รุ่งโรจน์', nickname: 'พลอย', email: 'sirinthorn.r@std.ac.th', phone: '098-901-2345' },
+    { code: '66010194', name: 'อดิศร นิติกุล', nickname: 'ตั้ม', email: 'adison.n@std.ac.th', phone: '099-012-3456' },
+    { code: '66010203', name: 'อรรถพล โกเมศ', nickname: 'โอ๊ต', email: 'attapol.k@std.ac.th', phone: '081-999-8877' },
+  ];
+
+  const studentDocs: Student[] = sampleStudents.map((s, idx) => ({
+    id: `std_${courseId}_${idx + 1}`,
+    studentCode: s.code,
+    name: s.name,
+    nickname: s.nickname,
+    email: s.email,
+    phone: s.phone,
+    courseId,
+    teacherId,
+    createdAt: new Date().toISOString(),
+  }));
+  localStorage.setItem(LOCAL_STUDENTS_KEY + courseId, JSON.stringify(studentDocs));
+
+  // 6 Sessions
+  const sessionConfigs = [
+    { week: 1, date: '2026-08-11', topic: 'แนะนำรายวิชาและพื้นฐาน Big-O Notation' },
+    { week: 2, date: '2026-08-18', topic: 'Array, Linked List และการวิเคราะห์ Time Complexity' },
+    { week: 3, date: '2026-08-25', topic: 'Stack และ Queue พร้อมโจทย์ปฏิบัติการ' },
+    { week: 4, date: '2026-09-01', topic: 'Recursion และ Divide & Conquer' },
+    { week: 5, date: '2026-09-08', topic: 'Sorting Algorithms (Quick Sort, Merge Sort) [สัปดาห์กิจกรรมมหาวิทยาลัย]' },
+    { week: 6, date: '2026-09-15', topic: 'Tree & Binary Search Tree (BST) [คาบล่าสุด]' },
+  ];
+
+  const sessions: Session[] = sessionConfigs.map(sc => ({
+    id: `sess_${courseId}_w${sc.week}`,
+    courseId,
+    teacherId,
+    weekNumber: sc.week,
+    date: sc.date,
+    topic: sc.topic,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+  localStorage.setItem(LOCAL_SESSIONS_KEY + courseId, JSON.stringify(sessions));
+
+  // Attendance Records
+  for (const sess of sessions) {
+    const recordsMap: Record<string, AttendanceRecord> = {};
+    for (const std of studentDocs) {
+      let status: AttendanceStatus = 'present';
+      let participationScore = Math.floor(Math.random() * 3) + 1;
+      let note = '';
+
+      if (std.studentCode === '66010194') { // อดิศร (เสี่ยงวิกฤต ขาด w4, w5, w6)
+        if (sess.weekNumber >= 4) {
+          status = 'absent';
+          participationScore = 0;
+          note = 'ไม่พบในห้องเรียน ติดต่อไม่ได้';
+        } else {
+          status = sess.weekNumber === 1 ? 'present' : 'late';
+          participationScore = 1;
+        }
+      } else if (std.studentCode === '66010059') { // ดนัย (ขาด 2 ครั้งติดกัน w5, w6)
+        if (sess.weekNumber >= 5) {
+          status = 'absent';
+          participationScore = 0;
+          note = 'ขาดเรียนติดต่อกัน 2 ครั้ง';
+        } else {
+          status = 'present';
+          participationScore = 2;
+        }
+      } else if (std.studentCode === '66010078') { // ธนวัฒน์ (กลุ่มเฝ้าระวัง สายบ่อย)
+        if (sess.weekNumber === 2 || sess.weekNumber === 5) {
+          status = 'absent';
+          participationScore = 0;
+        } else if (sess.weekNumber === 3 || sess.weekNumber === 6) {
+          status = 'late';
+          participationScore = 1;
+          note = 'เข้าสาย 20 นาที';
+        } else {
+          status = 'present';
+          participationScore = 2;
+        }
+      } else if (std.studentCode === '66010149') { // มณฑิรา (ลาป่วย w5)
+        if (sess.weekNumber === 5) {
+          status = 'leave';
+          participationScore = 0;
+          note = 'มีใบรับรองแพทย์ส่งผ่านระบบ';
+        } else {
+          status = 'present';
+          participationScore = 3;
+          note = 'ตอบคำถามและช่วยอธิบายโค้ดให้เพื่อน';
+        }
+      } else if (sess.weekNumber === 5) { // Dip in week 5
+        const r = Math.random();
+        if (r < 0.25) { status = 'absent'; participationScore = 0; }
+        else if (r < 0.45) { status = 'late'; participationScore = 1; }
+        else { status = 'present'; participationScore = Math.floor(Math.random() * 3) + 1; }
+      } else {
+        const r = Math.random();
+        if (r < 0.88) { status = 'present'; participationScore = Math.floor(Math.random() * 3) + 1; }
+        else if (r < 0.95) { status = 'late'; participationScore = 1; }
+        else { status = 'absent'; participationScore = 0; }
+      }
+
+      recordsMap[std.id] = {
+        id: std.id,
+        studentId: std.id,
+        studentCode: std.studentCode,
+        studentName: std.name,
+        courseId,
+        sessionId: sess.id,
+        teacherId,
+        status,
+        participationScore,
+        note,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    localStorage.setItem(`${LOCAL_RECORDS_KEY}${courseId}_${sess.id}`, JSON.stringify(recordsMap));
+  }
+}
+
 // ----------------------------------------------------
 // COURSES
 // ----------------------------------------------------
 export async function getCoursesByTeacher(teacherId: string): Promise<Course[]> {
+  if (isDemoMode(teacherId)) {
+    initDemoStorageIfEmpty(teacherId);
+    const stored = localStorage.getItem(LOCAL_COURSES_KEY);
+    const list: Course[] = stored ? JSON.parse(stored) : [];
+    return list.filter(c => c.teacherId === teacherId || teacherId === 'demo-teacher-001');
+  }
+
   const path = 'courses';
   try {
     const q = query(collection(db, path), where('teacherId', '==', teacherId));
@@ -43,21 +220,36 @@ export async function getCoursesByTeacher(teacherId: string): Promise<Course[]> 
     snapshot.forEach(docSnap => {
       courses.push(docSnap.data() as Course);
     });
-    // sort by updatedAt descending
     return courses.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   } catch (error) {
+    console.warn('Firestore getCourses error, checking fallback:', error);
+    // Fallback if needed
+    if (!auth.currentUser) {
+      initDemoStorageIfEmpty(teacherId);
+      const stored = localStorage.getItem(LOCAL_COURSES_KEY);
+      return stored ? JSON.parse(stored) : [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
 
 export async function createCourse(courseData: Omit<Course, 'createdAt' | 'updatedAt'>): Promise<Course> {
-  const path = `courses/${courseData.id}`;
   const now = new Date().toISOString();
   const course: Course = {
     ...courseData,
     createdAt: now,
     updatedAt: now,
   };
+
+  if (isDemoMode(courseData.teacherId)) {
+    const stored = localStorage.getItem(LOCAL_COURSES_KEY);
+    const list: Course[] = stored ? JSON.parse(stored) : [];
+    list.unshift(course);
+    localStorage.setItem(LOCAL_COURSES_KEY, JSON.stringify(list));
+    return course;
+  }
+
+  const path = `courses/${course.id}`;
   try {
     await setDoc(doc(db, 'courses', course.id), course);
     return course;
@@ -70,28 +262,49 @@ export async function createCourse(courseData: Omit<Course, 'createdAt' | 'updat
 // STUDENTS
 // ----------------------------------------------------
 export async function getStudentsByCourse(courseId: string): Promise<Student[]> {
+  if (isDemoMode()) {
+    const stored = localStorage.getItem(LOCAL_STUDENTS_KEY + courseId);
+    const list: Student[] = stored ? JSON.parse(stored) : [];
+    return list.sort((a, b) => a.studentCode.localeCompare(b.studentCode, undefined, { numeric: true }));
+  }
+
   const path = `courses/${courseId}/students`;
   try {
-    const snapshot = await getDocs(collection(db, 'courses', courseId, 'students'));
+    const q = auth.currentUser 
+      ? query(collection(db, 'courses', courseId, 'students'), where('teacherId', '==', auth.currentUser.uid))
+      : collection(db, 'courses', courseId, 'students');
+    const snapshot = await getDocs(q);
     const students: Student[] = [];
     snapshot.forEach(docSnap => {
       students.push(docSnap.data() as Student);
     });
-    // sort by studentCode ascending
     return students.sort((a, b) => a.studentCode.localeCompare(b.studentCode, undefined, { numeric: true }));
   } catch (error) {
+    if (!auth.currentUser) {
+      const stored = localStorage.getItem(LOCAL_STUDENTS_KEY + courseId);
+      return stored ? JSON.parse(stored) : [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
 
 export async function addStudent(courseId: string, studentData: Omit<Student, 'id' | 'createdAt'>): Promise<Student> {
   const id = `std_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const path = `courses/${courseId}/students/${id}`;
   const student: Student = {
     ...studentData,
     id,
     createdAt: new Date().toISOString(),
   };
+
+  if (isDemoMode(studentData.teacherId)) {
+    const stored = localStorage.getItem(LOCAL_STUDENTS_KEY + courseId);
+    const list: Student[] = stored ? JSON.parse(stored) : [];
+    list.push(student);
+    localStorage.setItem(LOCAL_STUDENTS_KEY + courseId, JSON.stringify(list));
+    return student;
+  }
+
+  const path = `courses/${courseId}/students/${id}`;
   try {
     await setDoc(doc(db, 'courses', courseId, 'students', id), student);
     return student;
@@ -101,6 +314,21 @@ export async function addStudent(courseId: string, studentData: Omit<Student, 'i
 }
 
 export async function bulkAddStudents(courseId: string, studentsList: Omit<Student, 'id' | 'createdAt'>[]): Promise<void> {
+  if (isDemoMode()) {
+    const stored = localStorage.getItem(LOCAL_STUDENTS_KEY + courseId);
+    const list: Student[] = stored ? JSON.parse(stored) : [];
+    const now = new Date().toISOString();
+    studentsList.forEach((std, idx) => {
+      list.push({
+        ...std,
+        id: `std_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 5)}`,
+        createdAt: now,
+      });
+    });
+    localStorage.setItem(LOCAL_STUDENTS_KEY + courseId, JSON.stringify(list));
+    return;
+  }
+
   const path = `courses/${courseId}/students`;
   try {
     const batch = writeBatch(db);
@@ -124,15 +352,28 @@ export async function bulkAddStudents(courseId: string, studentsList: Omit<Stude
 // SESSIONS
 // ----------------------------------------------------
 export async function getSessionsByCourse(courseId: string): Promise<Session[]> {
+  if (isDemoMode()) {
+    const stored = localStorage.getItem(LOCAL_SESSIONS_KEY + courseId);
+    const list: Session[] = stored ? JSON.parse(stored) : [];
+    return list.sort((a, b) => a.weekNumber - b.weekNumber);
+  }
+
   const path = `courses/${courseId}/sessions`;
   try {
-    const snapshot = await getDocs(collection(db, 'courses', courseId, 'sessions'));
+    const q = auth.currentUser 
+      ? query(collection(db, 'courses', courseId, 'sessions'), where('teacherId', '==', auth.currentUser.uid))
+      : collection(db, 'courses', courseId, 'sessions');
+    const snapshot = await getDocs(q);
     const sessions: Session[] = [];
     snapshot.forEach(docSnap => {
       sessions.push(docSnap.data() as Session);
     });
     return sessions.sort((a, b) => a.weekNumber - b.weekNumber);
   } catch (error) {
+    if (!auth.currentUser) {
+      const stored = localStorage.getItem(LOCAL_SESSIONS_KEY + courseId);
+      return stored ? JSON.parse(stored) : [];
+    }
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
@@ -145,7 +386,6 @@ export async function createSession(
   topic: string
 ): Promise<Session> {
   const id = `sess_w${weekNumber}_${Date.now()}`;
-  const path = `courses/${courseId}/sessions/${id}`;
   const now = new Date().toISOString();
   const session: Session = {
     id,
@@ -168,6 +408,15 @@ export async function createSession(
     updatedAt: now,
   };
 
+  if (isDemoMode(teacherId)) {
+    const stored = localStorage.getItem(LOCAL_SESSIONS_KEY + courseId);
+    const list: Session[] = stored ? JSON.parse(stored) : [];
+    list.push(session);
+    localStorage.setItem(LOCAL_SESSIONS_KEY + courseId, JSON.stringify(list));
+    return session;
+  }
+
+  const path = `courses/${courseId}/sessions/${id}`;
   try {
     await setDoc(doc(db, 'courses', courseId, 'sessions', id), session);
     return session;
@@ -180,9 +429,17 @@ export async function createSession(
 // ATTENDANCE & PARTICIPATION RECORDS
 // ----------------------------------------------------
 export async function getSessionRecords(courseId: string, sessionId: string): Promise<Record<string, AttendanceRecord>> {
+  if (isDemoMode()) {
+    const stored = localStorage.getItem(`${LOCAL_RECORDS_KEY}${courseId}_${sessionId}`);
+    return stored ? JSON.parse(stored) : {};
+  }
+
   const path = `courses/${courseId}/sessions/${sessionId}/records`;
   try {
-    const snapshot = await getDocs(collection(db, 'courses', courseId, 'sessions', sessionId, 'records'));
+    const q = auth.currentUser 
+      ? query(collection(db, 'courses', courseId, 'sessions', sessionId, 'records'), where('teacherId', '==', auth.currentUser.uid))
+      : collection(db, 'courses', courseId, 'sessions', sessionId, 'records');
+    const snapshot = await getDocs(q);
     const recordsMap: Record<string, AttendanceRecord> = {};
     snapshot.forEach(docSnap => {
       const rec = docSnap.data() as AttendanceRecord;
@@ -190,6 +447,10 @@ export async function getSessionRecords(courseId: string, sessionId: string): Pr
     });
     return recordsMap;
   } catch (error) {
+    if (!auth.currentUser) {
+      const stored = localStorage.getItem(`${LOCAL_RECORDS_KEY}${courseId}_${sessionId}`);
+      return stored ? JSON.parse(stored) : {};
+    }
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
@@ -199,6 +460,18 @@ export async function saveRecord(
   sessionId: string,
   record: AttendanceRecord
 ): Promise<void> {
+  if (isDemoMode(record.teacherId)) {
+    const key = `${LOCAL_RECORDS_KEY}${courseId}_${sessionId}`;
+    const stored = localStorage.getItem(key);
+    const map: Record<string, AttendanceRecord> = stored ? JSON.parse(stored) : {};
+    map[record.studentId] = {
+      ...record,
+      updatedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(key, JSON.stringify(map));
+    return;
+  }
+
   const path = `courses/${courseId}/sessions/${sessionId}/records/${record.studentId}`;
   try {
     await setDoc(doc(db, 'courses', courseId, 'sessions', sessionId, 'records', record.studentId), {
@@ -210,12 +483,26 @@ export async function saveRecord(
   }
 }
 
-// Fast Bulk Save: Mark all unmarked or all students with a status
 export async function bulkUpdateRecords(
   courseId: string,
   sessionId: string,
   records: AttendanceRecord[]
 ): Promise<void> {
+  if (isDemoMode(records[0]?.teacherId)) {
+    const key = `${LOCAL_RECORDS_KEY}${courseId}_${sessionId}`;
+    const stored = localStorage.getItem(key);
+    const map: Record<string, AttendanceRecord> = stored ? JSON.parse(stored) : {};
+    const now = new Date().toISOString();
+    records.forEach(rec => {
+      map[rec.studentId] = {
+        ...rec,
+        updatedAt: now,
+      };
+    });
+    localStorage.setItem(key, JSON.stringify(map));
+    return;
+  }
+
   const path = `courses/${courseId}/sessions/${sessionId}/records`;
   try {
     const batch = writeBatch(db);
@@ -258,10 +545,8 @@ export async function calculateStudentOverallStats(
     }));
   }
 
-  // Fetch records for all sessions
-  const sessionRecordsList: Array<{ session: Session; records: Record<string, AttendanceRecord> }> = [];
-  // Sort sessions chronologically by weekNumber
   const sortedSessions = [...sessions].sort((a, b) => a.weekNumber - b.weekNumber);
+  const sessionRecordsList: Array<{ session: Session; records: Record<string, AttendanceRecord> }> = [];
 
   for (const session of sortedSessions) {
     const recs = await getSessionRecords(courseId, session.id);
@@ -276,13 +561,12 @@ export async function calculateStudentOverallStats(
     let totalParticipationScore = 0;
     let lastAttendedWeek: number | undefined;
 
-    // To calculate consecutive absences (trailing from latest session backwards)
     let consecutiveAbsences = 0;
     let stillCountingConsecutive = true;
 
-    // Check sessions in reverse chronological order for consecutive absences
+    // Trailing consecutive absences (latest week backwards)
     const reverseSessions = [...sessionRecordsList].reverse();
-    for (const { session, records } of reverseSessions) {
+    for (const { records } of reverseSessions) {
       const rec = records[student.id];
       const status = rec?.status;
       if (status === 'absent') {
@@ -294,7 +578,6 @@ export async function calculateStudentOverallStats(
       }
     }
 
-    // Now calculate totals
     sessionRecordsList.forEach(({ session, records }) => {
       const rec = records[student.id];
       if (rec) {
@@ -311,14 +594,11 @@ export async function calculateStudentOverallStats(
         }
         totalParticipationScore += rec.participationScore || 0;
       } else {
-        // Unmarked defaults to not counted or absent depending on preference, let's count as absent if session is past
         absentCount++;
       }
     });
 
     const totalSessions = sessionRecordsList.length;
-    // Standard attendance formula: (Present + 0.5 * Late) / TotalSessions * 100
-    // Note: Approved Leave does not penalize or counts according to standard
     const effectiveAttended = presentCount + (0.5 * lateCount);
     const divisor = Math.max(1, totalSessions - leaveCount);
     const attendanceRate = Math.min(100, Math.round((effectiveAttended / divisor) * 100));
@@ -377,7 +657,6 @@ export async function calculateWeeklyTrends(
       sumScore += r.participationScore || 0;
     });
 
-    // If total registered students is higher, remainder are unmarked/absent
     const recordedCount = present + late + leave + absent;
     if (totalStudents > recordedCount) {
       absent += (totalStudents - recordedCount);
@@ -402,7 +681,6 @@ export async function calculateWeeklyTrends(
     });
   }
 
-  // Find lowest week
   let lowestWeek: WeeklyTrend | null = null;
   if (trends.length > 0) {
     lowestWeek = trends.reduce((min, curr) => (curr.attendanceRate < min.attendanceRate ? curr : min), trends[0]);
@@ -415,6 +693,12 @@ export async function calculateWeeklyTrends(
 // SEED INITIAL SAMPLE DATA (DEMO COURSE)
 // ----------------------------------------------------
 export async function seedSampleCourse(teacherId: string, teacherEmail: string): Promise<string> {
+  if (isDemoMode(teacherId)) {
+    localStorage.removeItem(LOCAL_COURSES_KEY);
+    initDemoStorageIfEmpty(teacherId);
+    return 'demo_course_default';
+  }
+
   const courseId = `demo_course_${Date.now()}`;
   const course: Course = {
     id: courseId,
@@ -432,7 +716,6 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
 
   await setDoc(doc(db, 'courses', courseId), course);
 
-  // 20 Realistic Thai Students
   const sampleStudents = [
     { code: '66010012', name: 'กิตติศักดิ์ วงศ์สุวรรณ', nickname: 'กิต', email: 'kittisak.w@std.ac.th', phone: '081-234-5678' },
     { code: '66010025', name: 'จิราพร รัตนโชติ', nickname: 'แพร', email: 'jiraporn.r@std.ac.th', phone: '082-345-6789' },
@@ -475,12 +758,6 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
     studentDocs.push(student);
   }
 
-  // 6 Teaching Sessions (Weeks 1 to 6)
-  // Let's create realistic trends:
-  // Week 1: High attendance (Intro)
-  // Week 2-4: Good attendance
-  // Week 5: Lowest attendance (Exam prep or campus festival week)
-  // Week 6: Current active week
   const sessionConfigs = [
     { week: 1, date: '2026-08-11', topic: 'แนะนำรายวิชาและพื้นฐาน Big-O Notation' },
     { week: 2, date: '2026-08-18', topic: 'Array, Linked List และการวิเคราะห์ Time Complexity' },
@@ -504,18 +781,12 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
     };
     await setDoc(doc(db, 'courses', courseId, 'sessions', sessId), session);
 
-    // Generate records for each student in this session
-    // Specifically arrange so:
-    // Student 66010059 (ดนัย บุญมี) has absent in week 5 & week 6 -> 2 CONSECUTIVE ABSENCES ALERT!
-    // Student 66010194 (อดิศร นิติกุล) has absent in week 4, 5, 6 -> 3 CONSECUTIVE ABSENCES ALERT & CRITICAL GROUP (<60%)!
-    // Student 66010078 (ธนวัฒน์ พงษ์ศิริ) is in WARNING group (~70%)
-    // Others mostly normal with good engagement
     for (const std of studentDocs) {
       let status: AttendanceStatus = 'present';
-      let participationScore = Math.floor(Math.random() * 3) + 1; // 1 to 3
+      let participationScore = Math.floor(Math.random() * 3) + 1;
       let note = '';
 
-      if (std.studentCode === '66010194') { // อดิศร (เสี่ยงวิกฤต ขาด 3 ครั้งติด)
+      if (std.studentCode === '66010194') {
         if (sc.week >= 4) {
           status = 'absent';
           participationScore = 0;
@@ -524,7 +795,7 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
           status = sc.week === 1 ? 'present' : 'late';
           participationScore = 1;
         }
-      } else if (std.studentCode === '66010059') { // ดนัย (ขาด 2 ครั้งติดกันล่าสุด w5, w6)
+      } else if (std.studentCode === '66010059') {
         if (sc.week >= 5) {
           status = 'absent';
           participationScore = 0;
@@ -533,7 +804,7 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
           status = 'present';
           participationScore = 2;
         }
-      } else if (std.studentCode === '66010078') { // ธนวัฒน์ (กลุ่มเฝ้าระวัง สายบ่อย ขาด w2, w5)
+      } else if (std.studentCode === '66010078') {
         if (sc.week === 2 || sc.week === 5) {
           status = 'absent';
           participationScore = 0;
@@ -545,7 +816,7 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
           status = 'present';
           participationScore = 2;
         }
-      } else if (std.studentCode === '66010149') { // มณฑิรา (ลาป่วย w5)
+      } else if (std.studentCode === '66010149') {
         if (sc.week === 5) {
           status = 'leave';
           participationScore = 0;
@@ -556,7 +827,6 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
           note = 'ตอบคำถามและช่วยอธิบายโค้ดให้เพื่อน';
         }
       } else if (sc.week === 5) {
-        // Week 5 dip: 4 students absent, 3 late
         const rand = Math.random();
         if (rand < 0.25) {
           status = 'absent';
@@ -569,7 +839,6 @@ export async function seedSampleCourse(teacherId: string, teacherEmail: string):
           participationScore = Math.floor(Math.random() * 3) + 1;
         }
       } else {
-        // Normal weeks
         const r = Math.random();
         if (r < 0.88) {
           status = 'present';
