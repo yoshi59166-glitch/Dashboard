@@ -1,0 +1,6 @@
+{
+  "name": "CheckPoint - ระบบเช็กชื่อและการมีส่วนร่วมในชั้นเรียน",
+  "description": "เว็บแอปพลิเคชันสำหรับอาจารย์ผู้สอน เช็กชื่อรวดเร็ว บันทึกคะแนนการมีส่วนร่วม ติดตามแนวโน้ม และแจ้งเตือนผู้เรียนกลุ่มเสี่ยงขาดเรียน",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

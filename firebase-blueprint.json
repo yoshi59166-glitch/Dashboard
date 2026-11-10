@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "Course": {
+      "title": "Course",
+      "description": "A course subject taught by the instructor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string", "maxLength": 32 },
+        "name": { "type": "string", "maxLength": 100 },
+        "section": { "type": "string", "maxLength": 20 },
+        "term": { "type": "string", "maxLength": 30 },
+        "teacherId": { "type": "string", "maxLength": 128 },
+        "teacherEmail": { "type": "string", "maxLength": 120 },
+        "totalPlannedWeeks": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "code", "name", "teacherId"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "A student enrolled in a course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentCode": { "type": "string", "maxLength": 30 },
+        "name": { "type": "string", "maxLength": 100 },
+        "nickname": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "courseId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "studentCode", "name", "courseId", "teacherId"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "A teaching class session or meeting date",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "weekNumber": { "type": "number" },
+        "date": { "type": "string", "maxLength": 20 },
+        "topic": { "type": "string", "maxLength": 150 },
+        "summary": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "courseId", "teacherId", "weekNumber", "date"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Student attendance status and participation score for a session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentCode": { "type": "string", "maxLength": 30 },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "courseId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "status": { "type": "string", "enum": ["present", "absent", "leave", "late"] },
+        "participationScore": { "type": "number" },
+        "note": { "type": "string", "maxLength": 200 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "studentId", "courseId", "sessionId", "teacherId", "status", "participationScore"]
+    }
+  },
+  "firestore": {
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Collection of courses managed by teachers"
+    },
+    "/courses/{courseId}/students/{studentId}": {
+      "schema": "Student",
+      "description": "Collection of students enrolled in the course"
+    },
+    "/courses/{courseId}/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Collection of class sessions/weeks for a course"
+    },
+    "/courses/{courseId}/sessions/{sessionId}/records/{recordId}": {
+      "schema": "AttendanceRecord",
+      "description": "Individual student attendance status and participation records for a session"
+    }
+  }
+}
